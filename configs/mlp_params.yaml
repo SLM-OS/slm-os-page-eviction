@@ -1,0 +1,35 @@
+# MLP hyperparameters (Section 7.2 of the plan).
+
+architecture:
+  hidden_layers: [64, 32, 16]
+  activation: "relu"
+  dropout: 0.1
+  output_heads:
+    classification: "sigmoid"
+    reuse_distance: "relu"
+
+training:
+  learning_rate: 0.001
+  batch_size: 256
+  epochs: 50
+  patience: 5
+  optimizer: "adam"
+  scheduler: "cosine_annealing"
+  reuse_loss_weight: 0.3  # Joint loss: L_cls + 0.3 * L_reuse
+  seed: 42
+
+# DAgger fine-tuning (Section 8.2 Phase 4)
+dagger:
+  num_rounds: 3
+  mix_ratio: 0.5  # Fraction of new on-policy data per round
+
+quantization:
+  method: "post_training_int8"
+  symmetric: true
+  per_tensor: true
+  target_accuracy_loss: 0.01  # Max 1% accuracy degradation
+  target_size_kb: 5
+
+export:
+  format: "rust_const_arrays"
+  fixed_point: true

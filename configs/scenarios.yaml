@@ -1,0 +1,53 @@
+# Workload scenario definitions for the SLM-OS page replacement simulator.
+# Each scenario defines parameters for the WorkloadGenerator.
+
+scenarios:
+  single_inference:
+    description: "Single model steady-state inference"
+    model: "medium"
+    num_inferences: 10
+    ticks_per_layer: 5
+
+  multi_model:
+    description: "Multiple models with interleaved concurrent inference"
+    models: ["tiny", "small", "medium"]
+    num_inferences_each: 5
+    interleave_ticks: 3
+
+  hot_swap:
+    description: "Model hot-swap mid-run"
+    model_old: "medium"
+    model_new: "large"
+    swap_tick: 5000
+    warmup_inferences: 5
+    post_swap_inferences: 5
+    test_set: true  # Held out for test evaluation
+
+  burst_load:
+    description: "Memory pressure spike with periodic bursts"
+    model: "small"
+    burst_size: 20
+    burst_interval: 100
+    num_bursts: 10
+    baseline_inferences: 3
+
+  mixed_priority:
+    description: "High-priority and low-priority models competing"
+    num_inferences: 5
+
+  gpu_contention:
+    description: "GPU-mapped block constraints with multiple GPU models"
+    num_inferences: 5
+    test_set: true  # Held out for test evaluation
+
+  adversarial:
+    description: "Pathological access patterns (cyclic scan > pool size)"
+    pool_size: 32
+    num_accesses: 5000
+
+# Simulation defaults
+defaults:
+  weight_pool_blocks: 64
+  workspace_pool_blocks: 32
+  seeds: [42, 123, 456, 789, 1337]
+  fault_window_ticks: 100
