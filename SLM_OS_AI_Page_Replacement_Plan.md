@@ -1025,6 +1025,12 @@ All heavy lifting (model inference, expert selection) stays in Rust. The FFI is 
 - ✅ Implement MLP → Rust const arrays with int8 quantization (`mlp_to_rust.py`)
 - ✅ Implement cross-validation framework (`verify_export.py`)
 - ✅ Implement float32 Rust inference function for verification
+- ✅ End-to-end Rust verification harness (`scripts/verify_rust_export.py`):
+  compiles generated Rust with rustc, runs on 800 random test vectors,
+  compares to Python reference. **XGBoost: byte-perfect (0 mismatches)**.
+  **MLP int8: 95% decision agreement on 8-candidate groups** (matches the
+  target). Surfaced and fixed two real export bugs (XGBoost feature-name
+  parsing, MLP layer-1 input quantization formula).
 
 #### Milestone 6.2: Rust Policy Trait 🔗
 - ☐ Create `runtime/src/mm/eviction_policy.rs`

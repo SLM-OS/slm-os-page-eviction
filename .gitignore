@@ -8,4 +8,5 @@ build/
 data/traces/
 data/models/
 data/results/
+data/export/
 *.parquet

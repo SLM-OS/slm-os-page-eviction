@@ -59,10 +59,10 @@ See [docs/getting-started.md](docs/getting-started.md) for full setup and usage 
 | Phase 3 | XGBoost training, grid search, feature importance, evaluation | ✅ Complete — mean norm fault rate **0.215** (target <0.3) |
 | Phase 4 | MLP training, DAgger, quantization, evaluation | ✅ Complete — MLP 95.97% vs XGBoost 96.07% test accuracy; int8 99.6% agreement |
 | Phase 5 | CACHEUS adaptive expert selector | Selector + feedback loop implemented; CACHEUS mean 0.465; online tuning pending |
-| Phase 6 | Rust export pipeline (XGBoost if-else, MLP int8) | Export code complete, SLM-OS integration pending |
+| Phase 6 | Rust export pipeline (XGBoost if-else, MLP int8) | ✅ Export code + end-to-end verification (XGBoost byte-perfect, MLP int8 95% decision agreement); SLM-OS Rust integration pending |
 | Phase 7 | Benchmark suite, comparative analysis, documentation | Benchmark + results documented; statistical tests + capstone writeup pending |
 
-86 unit tests cover the simulator, workload generator, all policies (including CACHEUS weight update and eviction feedback tracking), feature extraction, Belady oracle, training pipeline helpers, and export verification.
+117 unit tests cover the simulator, workload generator, all policies (including CACHEUS weight update, trajectory recording, and eviction feedback tracking), feature extraction, Belady oracle, training pipeline helpers, statistical analysis helpers, and end-to-end Rust export.
 
 See [SLM_OS_AI_Page_Replacement_Plan.md](SLM_OS_AI_Page_Replacement_Plan.md) for the full plan with per-task status tracking.
 
@@ -118,7 +118,9 @@ Each eviction candidate is described by **27 features** (or 26 without the optio
 
 **Analysis** (statistical tests, charts): scipy, matplotlib
 
-**Target** (SLM-OS integration): Pure Rust, no runtime dependencies. Models compile to ~50KB (XGBoost) and ~4KB (MLP int8).
+**Verification** (`scripts/verify_rust_export.py`): rustc (compiles generated Rust and runs against Python reference)
+
+**Target** (SLM-OS integration): Pure Rust, no runtime dependencies. Models compile to ~1.3MB (XGBoost if-else, 200 trees) and ~4.4KB (MLP int8).
 
 ## Repository Structure
 
@@ -130,7 +132,7 @@ slm-os-page-sim/
 │   ├── features/      # 27-feature extraction and normalization
 │   ├── training/      # Dataset, XGBoost/MLP training, DAgger, evaluation
 │   └── export/        # Rust code generation and cross-validation
-├── tests/             # 100 unit tests (simulator, policies, CACHEUS, analysis, training)
+├── tests/             # 117 unit tests (simulator, policies, CACHEUS, analysis, training, export)
 ├── scripts/           # CLI: generate_dataset, train_all, benchmark, analyze_*, tune_cacheus,
 │                      #      run_dagger, feature_reduction, plot_trajectories, export_to_slmos
 ├── configs/           # YAML: scenarios, xgb_params, mlp_params

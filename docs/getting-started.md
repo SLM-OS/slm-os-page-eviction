@@ -30,7 +30,7 @@ The simulator and classical policies work without xgboost/torch. ML imports are 
 python -m pytest tests/ -v
 ```
 
-All 86 tests should pass. Core tests (simulator, policies, features, CACHEUS, eviction feedback) run without xgboost/torch; 9 tests under `tests/test_training.py` skip automatically if ML dependencies are missing.
+All 117 tests should pass. Most tests (simulator, policies, features, CACHEUS, eviction feedback, analysis helpers) run without xgboost/torch; the training and Rust-export tests skip automatically if ML dependencies are missing.
 
 ## Quick Start: Generate a Dataset
 
@@ -88,6 +88,9 @@ python scripts/analyze_benchmark.py --input data/results/benchmark_results.csv -
 
 # Phase 7: render CACHEUS weight trajectories from tune_cacheus output
 python scripts/plot_trajectories.py --input data/results/cacheus_trajectories.json --output-dir data/results/
+
+# Phase 6.1: end-to-end Python ↔ Rust agreement check (requires rustc)
+python scripts/verify_rust_export.py --model-dir data/models/ --output-dir data/export/verify/
 ```
 
 ## Project Layout
@@ -100,10 +103,11 @@ slm-os-page-sim/
 │   ├── features/      # Feature extraction (27-dim vector) and normalization
 │   ├── training/      # Dataset loading, XGBoost/MLP training, DAgger, evaluation
 │   └── export/        # Rust code generation (XGBoost if-else, MLP int8 arrays)
-├── tests/             # 100 unit tests (simulator, policies, CACHEUS, training, analysis)
+├── tests/             # 117 unit tests (simulator, policies, CACHEUS, training, analysis, export)
 ├── scripts/           # CLI entry points: generate_dataset, train_all, benchmark,
 │                      # analyze_models, analyze_benchmark, tune_cacheus, run_dagger,
-│                      # feature_reduction, plot_trajectories, export_to_slmos
+│                      # feature_reduction, plot_trajectories, export_to_slmos,
+│                      # verify_rust_export
 ├── configs/           # YAML configs for scenarios, XGBoost params, MLP params
 ├── docs/              # This documentation
 └── data/              # Generated data (gitignored): traces/, models/, results/

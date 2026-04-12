@@ -256,3 +256,15 @@ python scripts/plot_trajectories.py --input data/results/cacheus_trajectories.js
 ```
 
 Produces per-scenario PNGs plus a combined grid, and prints adaptation-speed estimates (ticks until weight change drops below threshold).
+
+### `scripts/verify_rust_export.py`
+
+End-to-end Phase 6.1 verification: generates standalone Rust code (no SLM-OS imports), compiles it with `rustc`, runs the binaries on random test vectors, and compares predictions against Python:
+
+```bash
+python scripts/verify_rust_export.py --model-dir data/models/ --output-dir data/export/verify/ --num-vectors 800
+```
+
+Requires a Rust toolchain (`rustc`) in `$PATH`. Reports:
+- **XGBoost**: max/mean abs error and mismatch count at tolerance `1e-3` (target: byte-perfect)
+- **MLP int8**: error percentiles plus decision-agreement on synthetic 8-candidate groups (target: ≥95%)

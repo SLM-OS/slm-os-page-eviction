@@ -59,23 +59,25 @@ Post-training symmetric per-tensor quantization:
 
 ### Int8 inference (default)
 
+Weights and biases are stored as `i8` (one byte each) for ~4× memory savings, then dequantized via per-tensor scale factors at MAC time. The forward pass uses `f32` accumulators throughout — this is simpler than pure integer arithmetic and matches the Python forward pass exactly modulo round-off:
+
 ```rust
 pub fn mlp_predict(features: &[f32; 27]) -> f32 {
     // Layer 1: 27 -> 64, ReLU
     let mut h1 = [0.0_f32; 64];
     for i in 0..64 {
-        let mut acc = 0i32;
+        let mut acc = 0.0_f32;
         for j in 0..27 {
-            let input_q = (features[j] / W_L1_SCALE * 127.0) as i8;
-            acc += (W_L1[i][j] as i32) * (input_q as i32);
+            acc += features[j] * (W_L1[i][j] as f32) * W_L1_SCALE;
         }
-        h1[i] = (acc as f32) * W_L1_SCALE * W_L1_SCALE / (127.0 * 127.0)
-            + (B_L1[i] as f32) * B_L1_SCALE;
+        h1[i] = acc + (B_L1[i] as f32) * B_L1_SCALE;
         if h1[i] < 0.0 { h1[i] = 0.0; }  // ReLU
     }
-    // ... layers 2, 3, output with sigmoid
+    // ... layers 2, 3, output with sigmoid (same pattern)
 }
 ```
+
+(An earlier draft used pure-integer MAC for layer 1 with input quantization. That formula scaled inputs by `1/W_SCALE` and so silently truncated whenever `features / W_SCALE` left the i8 range — a real bug surfaced by the end-to-end Rust verification harness in `scripts/verify_rust_export.py`.)
 
 ### Float32 inference (verification)
 
