@@ -1082,14 +1082,16 @@ All heavy lifting (model inference, expert selection) stays in Rust. The FFI is 
 - ✅ Define benchmark scenarios (7 workload types)
 - ✅ Run each policy × each scenario × N seeds in simulator
 - ✅ Collect: fault_rate, normalized_fault_rate, eviction_cost
-- ☐ Statistical significance: paired t-test between policies
+- ✅ Statistical significance: paired t-tests between policies (`scripts/analyze_benchmark.py`)
 
-#### Milestone 7.2: Comparative Analysis ☐
-- ☐ Table: Policy × Scenario fault rate matrix
-- ☐ Chart: Normalized fault rate bar chart (all policies, all scenarios)
-- ☐ Chart: CACHEUS weight trajectories over time
-- ☐ Chart: Feature importance (XGBoost SHAP values)
-- ☐ Analysis: When does AI policy beat heuristics? When does it fail?
+#### Milestone 7.2: Comparative Analysis ✅
+- ✅ Table: Policy × Scenario fault rate matrix (`policy_scenario_matrix.csv`)
+- ✅ Chart: Normalized fault rate bar chart (`policy_comparison_per_scenario.png`)
+- ✅ Chart: Heatmap (policy × scenario) (`policy_heatmap.png`)
+- ✅ Chart: Per-policy ranking (`policy_overall_ranking.png`)
+- ✅ Chart: CACHEUS weight trajectories (`scripts/plot_trajectories.py`)
+- ✅ Chart: Feature importance (gain-based) — `scripts/analyze_models.py`
+- ✅ Failure analysis: per-policy scenarios above 0.5 norm rate (`failure_analysis.csv`)
 
 #### Milestone 7.3: SLM-OS Performance 🔗 ☐
 - ☐ Measure end-to-end inference throughput with AI eviction vs LRU

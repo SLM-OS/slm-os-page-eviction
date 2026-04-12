@@ -116,6 +116,8 @@ Each eviction candidate is described by **27 features** (or 26 without the optio
 
 **ML** (training, ML policies, export): xgboost, torch
 
+**Analysis** (statistical tests, charts): scipy, matplotlib
+
 **Target** (SLM-OS integration): Pure Rust, no runtime dependencies. Models compile to ~50KB (XGBoost) and ~4KB (MLP int8).
 
 ## Repository Structure
@@ -128,8 +130,9 @@ slm-os-page-sim/
 │   ├── features/      # 27-feature extraction and normalization
 │   ├── training/      # Dataset, XGBoost/MLP training, DAgger, evaluation
 │   └── export/        # Rust code generation and cross-validation
-├── tests/             # 61 unit tests
-├── scripts/           # CLI: generate_dataset, train_all, benchmark, export_to_slmos
+├── tests/             # 100 unit tests (simulator, policies, CACHEUS, analysis, training)
+├── scripts/           # CLI: generate_dataset, train_all, benchmark, analyze_*, tune_cacheus,
+│                      #      run_dagger, feature_reduction, plot_trajectories, export_to_slmos
 ├── configs/           # YAML: scenarios, xgb_params, mlp_params
 ├── docs/              # Detailed documentation
 └── data/              # Generated artifacts (gitignored)

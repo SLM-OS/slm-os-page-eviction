@@ -51,6 +51,7 @@ class CACHEUSSelector(EvictionPolicy):
         learning_rate: float = 0.1,
         window_size: int = 100,
         min_weight: float = 0.01,
+        record_trajectory: bool = False,
     ):
         self._experts = experts
         self._num_experts = len(experts)
@@ -63,6 +64,11 @@ class CACHEUSSelector(EvictionPolicy):
         # Per-expert tracking
         self._expert_faults: list[int] = [0] * self._num_experts
         self._expert_decisions: list[int] = [0] * self._num_experts
+
+        # Optional: record weight snapshots over time for analysis
+        self._record_trajectory = record_trajectory
+        self._trajectory: list[tuple[int, np.ndarray]] = []  # (tick, weights)
+        self._phase_change_log: list[tuple[int, np.ndarray]] = []  # (tick, weights)
 
     def select_victim(
         self,
@@ -97,6 +103,9 @@ class CACHEUSSelector(EvictionPolicy):
             expert_choices=expert_choices,
             ensemble_choice=victim_idx,
         ))
+
+        if self._record_trajectory:
+            self._trajectory.append((global_state.tick, self._weights.copy()))
 
         return victim_idx
 
@@ -169,7 +178,26 @@ class CACHEUSSelector(EvictionPolicy):
         # Compare current weights to uniform -- large deviation = adaptation
         uniform = 1.0 / self._num_experts
         max_deviation = float(np.max(np.abs(self._weights - uniform)))
-        return max_deviation > threshold
+        is_phase_change = max_deviation > threshold
+        if is_phase_change and self._history:
+            current_tick = self._history[-1].tick
+            self._phase_change_log.append((current_tick, self._weights.copy()))
+        return is_phase_change
+
+    @property
+    def trajectory(self) -> list[tuple[int, np.ndarray]]:
+        """Recorded weight trajectory (tick, weights snapshot) per decision."""
+        return self._trajectory
+
+    @property
+    def phase_change_log(self) -> list[tuple[int, np.ndarray]]:
+        """Detected phase change events: (tick, weights at that point)."""
+        return self._phase_change_log
+
+    @property
+    def expert_names(self) -> list[str]:
+        """Ordered list of expert names matching internal _weights array."""
+        return [e.name() for e in self._experts]
 
     def score(
         self,
@@ -191,6 +219,8 @@ class CACHEUSSelector(EvictionPolicy):
         self._history.clear()
         self._expert_faults = [0] * self._num_experts
         self._expert_decisions = [0] * self._num_experts
+        self._trajectory.clear()
+        self._phase_change_log.clear()
         for expert in self._experts:
             expert.reset()
 

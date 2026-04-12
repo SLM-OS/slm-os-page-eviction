@@ -219,3 +219,40 @@ python scripts/run_dagger.py --data data/traces/eviction_events.parquet --model-
 ```
 
 Saves the fine-tuned model to `data/models/mlp_model_dagger.pt`. Note: when the baseline MLP is already near-ceiling, DAgger may not improve accuracy — this is a valid finding, not a bug.
+
+### `scripts/tune_cacheus.py`
+
+Phase 5 hyperparameter sweep for the CACHEUS expert selector: tries a grid of `(learning_rate, window_size)` and four expert-pool compositions (`classical_only`, `ml_only`, `ml_plus_lru`, `all_5`), then records weight trajectories on each scenario for the best config:
+
+```bash
+python scripts/tune_cacheus.py --model-dir data/models/ --output-dir data/results/ --seeds 3
+```
+
+Outputs:
+- `cacheus_hyperparam_sweep.csv` — mean/max norm fault rate per (lr, window)
+- `cacheus_pool_comparison.csv` — per-scenario norm rate per pool composition
+- `cacheus_trajectories.json` — weight-over-time data for each scenario
+
+### `scripts/analyze_benchmark.py`
+
+Phase 7 statistical analysis of `benchmark_results.csv`:
+
+```bash
+python scripts/analyze_benchmark.py --input data/results/benchmark_results.csv --output-dir data/results/
+```
+
+Produces:
+- `policy_scenario_matrix.csv` — pivot table of mean normalized fault rate
+- `pairwise_ttests.csv` — per-scenario paired t-tests for every policy pair
+- `failure_analysis.csv` — scenarios where each policy exceeds 0.5 norm rate
+- `policy_comparison_per_scenario.png`, `policy_overall_ranking.png`, `policy_heatmap.png`
+
+### `scripts/plot_trajectories.py`
+
+Renders CACHEUS weight trajectories from `cacheus_trajectories.json`:
+
+```bash
+python scripts/plot_trajectories.py --input data/results/cacheus_trajectories.json --output-dir data/results/
+```
+
+Produces per-scenario PNGs plus a combined grid, and prints adaptation-speed estimates (ticks until weight change drops below threshold).

@@ -79,6 +79,15 @@ python scripts/feature_reduction.py --data data/traces/eviction_events.parquet -
 
 # DAgger fine-tuning with baseline comparison
 python scripts/run_dagger.py --data data/traces/eviction_events.parquet --model-dir data/models/ --dagger-rounds 3
+
+# Phase 5: CACHEUS lr × window sweep + pool composition + weight trajectories
+python scripts/tune_cacheus.py --model-dir data/models/ --output-dir data/results/
+
+# Phase 7: statistical tests, pivot tables, comparison charts
+python scripts/analyze_benchmark.py --input data/results/benchmark_results.csv --output-dir data/results/
+
+# Phase 7: render CACHEUS weight trajectories from tune_cacheus output
+python scripts/plot_trajectories.py --input data/results/cacheus_trajectories.json --output-dir data/results/
 ```
 
 ## Project Layout
@@ -91,8 +100,10 @@ slm-os-page-sim/
 │   ├── features/      # Feature extraction (27-dim vector) and normalization
 │   ├── training/      # Dataset loading, XGBoost/MLP training, DAgger, evaluation
 │   └── export/        # Rust code generation (XGBoost if-else, MLP int8 arrays)
-├── tests/             # 61 unit tests across all modules
-├── scripts/           # CLI entry points (generate, train, benchmark, export)
+├── tests/             # 100 unit tests (simulator, policies, CACHEUS, training, analysis)
+├── scripts/           # CLI entry points: generate_dataset, train_all, benchmark,
+│                      # analyze_models, analyze_benchmark, tune_cacheus, run_dagger,
+│                      # feature_reduction, plot_trajectories, export_to_slmos
 ├── configs/           # YAML configs for scenarios, XGBoost params, MLP params
 ├── docs/              # This documentation
 └── data/              # Generated data (gitignored): traces/, models/, results/

@@ -249,6 +249,52 @@ class TestCACHEUSReset:
         assert len(selector._history) == 0
 
 
+class TestCACHEUSTrajectory:
+    """Weight trajectory recording for online analysis (Phase 5)."""
+
+    def test_trajectory_disabled_by_default(self):
+        candidates, pool, gs = _make_candidates(3, access_times=[100, 50, 200])
+        experts = [LRUPolicy(), LFUPolicy()]
+        selector = CACHEUSSelector(experts=experts)
+
+        for _ in range(5):
+            selector.select_victim(candidates, pool, gs)
+
+        assert selector.trajectory == []
+
+    def test_trajectory_records_per_decision(self):
+        import numpy as np
+        candidates, pool, gs = _make_candidates(3, access_times=[100, 50, 200])
+        experts = [LRUPolicy(), LFUPolicy()]
+        selector = CACHEUSSelector(experts=experts, record_trajectory=True)
+
+        for _ in range(5):
+            selector.select_victim(candidates, pool, gs)
+
+        assert len(selector.trajectory) == 5
+        for tick, weights in selector.trajectory:
+            assert isinstance(tick, int)
+            assert isinstance(weights, np.ndarray)
+            assert weights.shape == (2,)
+
+    def test_trajectory_cleared_on_reset(self):
+        candidates, pool, gs = _make_candidates(3, access_times=[100, 50, 200])
+        experts = [LRUPolicy(), LFUPolicy()]
+        selector = CACHEUSSelector(experts=experts, record_trajectory=True)
+
+        selector.select_victim(candidates, pool, gs)
+        assert len(selector.trajectory) == 1
+
+        selector.reset()
+        assert selector.trajectory == []
+        assert selector.phase_change_log == []
+
+    def test_expert_names_property(self):
+        experts = [LRUPolicy(), LFUPolicy()]
+        selector = CACHEUSSelector(experts=experts)
+        assert selector.expert_names == ["LRU", "LFU"]
+
+
 class TestCACHEUSPhaseDetection:
     """Phase change detection based on weight deviation."""
 
@@ -277,3 +323,25 @@ class TestCACHEUSPhaseDetection:
         # (Just check the API works and returns a bool)
         result = selector.detect_phase_change(threshold=0.1)
         assert isinstance(result, bool)
+
+    def test_phase_change_logged(self):
+        """Detected phase changes are appended to phase_change_log."""
+        experts = [LRUPolicy(), LFUPolicy()]
+        selector = CACHEUSSelector(
+            experts=experts, learning_rate=0.5, window_size=10,
+        )
+        # Skew weights via injected records (need history populated first)
+        for tick in range(20):
+            record = EvictionRecord(
+                tick=tick, victim_block_id=tick,
+                expert_choices=[0, 1], ensemble_choice=0,
+            )
+            selector._history.append(record)
+            selector.update_feedback(tick, was_fault=True)
+
+        # Force detection — weights should be skewed at this point
+        detected = selector.detect_phase_change(threshold=0.05)
+        if detected:
+            assert len(selector.phase_change_log) > 0
+            tick, weights = selector.phase_change_log[0]
+            assert weights.shape == (2,)
