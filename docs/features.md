@@ -62,6 +62,25 @@ This feature is **optional**. It is controlled by `FeatureConfig(use_predicted_r
 
 Since this changes the feature vector dimensionality, models must be trained separately for each variant. The dual-mode support lets us empirically measure whether the heuristic helps.
 
+## Feature Importance and Reduced Set (Phase 3 Findings)
+
+Gain-based importance from the trained XGBoost model concentrates on a small subset of features:
+
+| Rank | Feature | % of Total Gain |
+|------|---------|------------------|
+| 1 | `predicted_reuse_dist` | **76.1%** |
+| 2 | `time_since_access` | 10.2% |
+| 3 | `time_since_load` | 1.8% |
+| 4 | `model_priority` | 1.6% |
+| 5 | `req_block_model_id` | 1.4% |
+| 6 | `recency_rank` | 1.4% |
+| 7 | `num_loaded_models` | 1.4% |
+| 8 | `access_count` | 1.2% |
+| 9 | `req_block_priority` | 1.0% |
+| 10 | `frequency_rank` | 1.0% |
+
+The top 10 features account for **97.2%** of total gain; 12 features (booleans, GPU flags, pool_type, etc.) are never used by the trained trees. A reduced 10-feature XGBoost model retains 96.04% test accuracy vs 96.07% for the full 27-feature model — a negligible 0.03% drop for substantial feature-extraction savings. See `scripts/feature_reduction.py`.
+
 ## Normalization (`normalizer.py`)
 
 `FeatureNormalizer` applies type-specific normalization:

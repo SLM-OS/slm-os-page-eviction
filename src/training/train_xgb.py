@@ -178,6 +178,48 @@ def cross_validate_xgb(
     return aucs
 
 
+def grid_search_xgb(
+    train_data: EvictionDataset,
+    val_data: EvictionDataset,
+    param_grid: dict[str, list] | None = None,
+) -> list[dict]:
+    """Grid search over XGBoost hyperparameters.
+
+    Args:
+        train_data: Training dataset.
+        val_data: Validation dataset.
+        param_grid: Dict of param_name -> list of values to try.
+            Defaults to the grid from configs/xgb_params.yaml.
+
+    Returns:
+        List of dicts with params and val_auc, sorted by val_auc descending.
+    """
+    if param_grid is None:
+        param_grid = {
+            "max_depth": [4, 5, 6, 7],
+            "learning_rate": [0.05, 0.1, 0.2],
+            "min_child_weight": [5, 10, 20],
+        }
+
+    # Generate all combinations
+    import itertools
+    keys = list(param_grid.keys())
+    values = list(param_grid.values())
+    combos = list(itertools.product(*values))
+
+    results = []
+    for i, combo in enumerate(combos):
+        params = dict(zip(keys, combo))
+        cfg = XGBTrainConfig(**params)
+        result = train_xgboost(train_data, val_data, cfg)
+        entry = {**params, "val_auc": result.val_auc, "best_iteration": result.best_iteration}
+        results.append(entry)
+        print(f"  [{i+1}/{len(combos)}] {params} -> val_auc={result.val_auc:.6f} (iter {result.best_iteration})")
+
+    results.sort(key=lambda x: x["val_auc"], reverse=True)
+    return results
+
+
 def save_model(model: xgb.Booster, path: str | Path) -> None:
     """Save trained XGBoost model."""
     model.save_model(str(path))

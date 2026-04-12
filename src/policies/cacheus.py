@@ -27,7 +27,7 @@ class EvictionRecord:
     tick: int
     victim_block_id: int
     expert_choices: list[int]  # Which candidate each expert would have chosen
-    chosen_expert_idx: int     # Which expert's recommendation was followed
+    ensemble_choice: int       # Which candidate the ensemble chose
 
 
 class CACHEUSSelector(EvictionPolicy):
@@ -95,7 +95,7 @@ class CACHEUSSelector(EvictionPolicy):
             tick=global_state.tick,
             victim_block_id=candidates[victim_idx].block_id,
             expert_choices=expert_choices,
-            chosen_expert_idx=-1,  # Ensemble decision, not a single expert
+            ensemble_choice=victim_idx,
         ))
 
         return victim_idx
@@ -120,15 +120,18 @@ class CACHEUSSelector(EvictionPolicy):
         for i, expert_choice_idx in enumerate(record.expert_choices):
             self._expert_decisions[i] += 1
             # Did this expert agree with the ensemble's decision?
-            agreed = (expert_choice_idx == record.expert_choices[-1])
+            agreed = (expert_choice_idx == record.ensemble_choice)
 
             if was_fault:
-                # Bad decision -- penalize experts that agreed
+                # Bad eviction (evicted block was re-accessed) -- penalize agreeing experts
                 if agreed:
                     self._weights[i] *= (1 - self._lr)
                     self._expert_faults[i] += 1
+                else:
+                    # Expert would have chosen differently (potentially better)
+                    self._weights[i] *= (1 + self._lr * 0.5)
             else:
-                # Good decision -- reward experts that agreed
+                # Good eviction (evicted block not re-accessed) -- reward agreeing experts
                 if agreed:
                     self._weights[i] *= (1 + self._lr)
 

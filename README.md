@@ -56,13 +56,13 @@ See [docs/getting-started.md](docs/getting-started.md) for full setup and usage 
 |-------|-------------|--------|
 | Phase 1 | Simulator core, workloads, classical policies, trace collection | ✅ Complete |
 | Phase 2 | Feature extraction (27-dim), normalization, Belady labeling, dataset assembly | ✅ Complete |
-| Phase 3 | XGBoost training pipeline, cross-validation | Training code complete, tuning/eval pending |
-| Phase 4 | MLP training, DAgger fine-tuning, quantization | Training code complete, eval pending |
-| Phase 5 | CACHEUS adaptive expert selector | Selector implemented, online eval pending |
+| Phase 3 | XGBoost training, grid search, feature importance, evaluation | ✅ Complete — mean norm fault rate **0.215** (target <0.3) |
+| Phase 4 | MLP training, DAgger, quantization, evaluation | ✅ Complete — MLP 95.97% vs XGBoost 96.07% test accuracy; int8 99.6% agreement |
+| Phase 5 | CACHEUS adaptive expert selector | Selector + feedback loop implemented; CACHEUS mean 0.465; online tuning pending |
 | Phase 6 | Rust export pipeline (XGBoost if-else, MLP int8) | Export code complete, SLM-OS integration pending |
-| Phase 7 | Benchmark suite, comparative analysis, documentation | Benchmark framework complete, full analysis pending |
+| Phase 7 | Benchmark suite, comparative analysis, documentation | Benchmark + results documented; statistical tests + capstone writeup pending |
 
-61 unit tests cover the simulator, workload generator, all policies, feature extraction, Belady oracle, and export verification.
+86 unit tests cover the simulator, workload generator, all policies (including CACHEUS weight update and eviction feedback tracking), feature extraction, Belady oracle, training pipeline helpers, and export verification.
 
 See [SLM_OS_AI_Page_Replacement_Plan.md](SLM_OS_AI_Page_Replacement_Plan.md) for the full plan with per-task status tracking.
 

@@ -30,7 +30,7 @@ The simulator and classical policies work without xgboost/torch. ML imports are 
 python -m pytest tests/ -v
 ```
 
-All 61 tests should pass. Tests only require core dependencies (no xgboost/torch).
+All 86 tests should pass. Core tests (simulator, policies, features, CACHEUS, eviction feedback) run without xgboost/torch; 9 tests under `tests/test_training.py` skip automatically if ML dependencies are missing.
 
 ## Quick Start: Generate a Dataset
 
@@ -66,6 +66,19 @@ python scripts/benchmark.py --model-dir data/models/ --output-dir data/results/
 ```bash
 # Requires trained models in data/models/
 python scripts/export_to_slmos.py --model-dir data/models/ --output-dir data/export/
+```
+
+## Quick Start: Analyze & Profile
+
+```bash
+# Feature importance, test-set accuracy, int8 quantization verification
+python scripts/analyze_models.py --data data/traces/eviction_events.parquet --model-dir data/models/
+
+# Reduced feature set (top-10) + inference latency profiling
+python scripts/feature_reduction.py --data data/traces/eviction_events.parquet --model-dir data/models/
+
+# DAgger fine-tuning with baseline comparison
+python scripts/run_dagger.py --data data/traces/eviction_events.parquet --model-dir data/models/ --dagger-rounds 3
 ```
 
 ## Project Layout

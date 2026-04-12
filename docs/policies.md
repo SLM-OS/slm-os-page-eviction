@@ -85,11 +85,26 @@ Weighted ensemble of up to 5 experts. At each eviction:
 1. Each expert produces scores via `score()`
 2. Scores are combined: `weighted_score[i] = sum(w[k] * expert_k_score[i])`
 3. Candidate with highest weighted score is evicted
-4. Decision and expert votes are recorded
+4. Decision and expert votes (per-expert chosen index plus the ensemble's actual choice) are recorded in `EvictionRecord`
 
-Weight update (on feedback):
-- **Fault** (evicted block re-accessed): multiply weight by `(1 - lr)` for experts that agreed
-- **No fault**: multiply weight by `(1 + lr)` for experts that agreed
-- Weights re-normalized after each update
+### Feedback-Driven Weight Update
 
-Phase change detection: if weight distribution diverges significantly from uniform, a workload phase change is flagged.
+The simulator drives CACHEUS feedback by tracking recently evicted content. When content `(model_id, layer_idx, pool_type)` is evicted, the simulator records it in `_evicted_content`. Later:
+
+- **Re-access (bad eviction)**: when a miss occurs for content that was recently evicted, `update_feedback(block_id, was_fault=True)` fires
+- **Window expiry (good eviction)**: content not re-accessed within `_eviction_feedback_window` ticks yields `update_feedback(block_id, was_fault=False)`
+
+Weight update rule (on `update_feedback`):
+
+| Eviction outcome | Expert agreed with ensemble | Expert disagreed with ensemble |
+|---|---|---|
+| Bad (`was_fault=True`) | `w *= (1 - lr)` (penalize) | `w *= (1 + 0.5 * lr)` (small reward) |
+| Good (`was_fault=False`) | `w *= (1 + lr)` (reward) | unchanged |
+
+Weights are floored at `min_weight` then renormalized so experts stay recoverable even after long penalty runs.
+
+**Agreement is measured against `EvictionRecord.ensemble_choice`** — the candidate index the combined scores actually selected — not any single expert's choice. (Earlier drafts incorrectly compared against the last expert; fixed during Phase 3-4 evaluation.)
+
+### Phase Change Detection
+
+`detect_phase_change(threshold)` flags a workload phase transition when the maximum per-expert deviation from the uniform distribution exceeds `threshold`. The detector requires at least `window_size / 2` recorded decisions before returning True to avoid noise.

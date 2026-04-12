@@ -172,7 +172,7 @@ def _collect_on_policy_data(
     expert's. The labels still come from the expert (Belady oracle).
     """
     from src.features.extractor import FeatureExtractor
-    from src.simulator.core import SimController
+    from src.simulator.core import MemoryState, SimController
     from src.simulator.trace import TraceCollector
 
     extractor = FeatureExtractor(mlp_policy.feature_config)

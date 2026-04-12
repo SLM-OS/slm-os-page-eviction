@@ -202,3 +202,117 @@ class TestSimController:
 
         assert sim.total_evictions == 1
         assert trace.num_evictions == 1
+
+
+class _FeedbackRecordingPolicy(LRUPolicy):
+    """LRU wrapper that records update_feedback calls."""
+
+    def __init__(self):
+        super().__init__()
+        self.feedback_calls: list[tuple[int, bool]] = []
+
+    def update_feedback(self, block_id: int, was_fault: bool) -> None:
+        self.feedback_calls.append((block_id, was_fault))
+
+
+class TestEvictionFeedback:
+    """Tests for the CACHEUS-style feedback tracking in SimController.
+
+    The simulator tracks recently evicted content; a miss on that content
+    signals a bad eviction (was_fault=True), and expiry of the window
+    signals a good eviction (was_fault=False).
+    """
+
+    def test_reaccess_after_eviction_signals_bad(self):
+        """Evicting content that gets re-accessed yields was_fault=True."""
+        from src.simulator.workload import AccessRequest
+        mem = MemoryState(weight_blocks=2, workspace_blocks=1)
+        policy = _FeedbackRecordingPolicy()
+        sim = SimController(memory=mem, policy=policy)
+
+        # Fill the pool with blocks (model 0, layers 0 and 1)
+        for i in range(2):
+            sim.process_access(AccessRequest(
+                tick=i, model_id=0, layer_idx=i,
+                pool_type=PoolType.WEIGHT,
+                access_pattern=AccessPattern.SEQUENTIAL,
+            ))
+
+        # Access layer 2 → evicts layer 0 (LRU)
+        sim.process_access(AccessRequest(
+            tick=10, model_id=0, layer_idx=2,
+            pool_type=PoolType.WEIGHT,
+            access_pattern=AccessPattern.SEQUENTIAL,
+        ))
+
+        # Re-access the evicted content (model 0, layer 0)
+        sim.process_access(AccessRequest(
+            tick=11, model_id=0, layer_idx=0,
+            pool_type=PoolType.WEIGHT,
+            access_pattern=AccessPattern.SEQUENTIAL,
+        ))
+
+        # Should have exactly one was_fault=True signal (on re-access of evicted content)
+        bad_signals = [f for f in policy.feedback_calls if f[1] is True]
+        assert len(bad_signals) >= 1, \
+            f"Expected bad-eviction signal, got {policy.feedback_calls}"
+
+    def test_window_expiry_signals_good_eviction(self):
+        """Evicted content not re-accessed within window yields was_fault=False."""
+        from src.simulator.workload import AccessRequest
+        mem = MemoryState(weight_blocks=2, workspace_blocks=1)
+        policy = _FeedbackRecordingPolicy()
+        sim = SimController(memory=mem, policy=policy)
+        sim._eviction_feedback_window = 5  # short window for the test
+
+        # Fill the pool
+        for i in range(2):
+            sim.process_access(AccessRequest(
+                tick=i, model_id=0, layer_idx=i,
+                pool_type=PoolType.WEIGHT,
+                access_pattern=AccessPattern.SEQUENTIAL,
+            ))
+
+        # Trigger an eviction at tick 10 (evicts layer 0 under LRU)
+        sim.process_access(AccessRequest(
+            tick=10, model_id=0, layer_idx=2,
+            pool_type=PoolType.WEIGHT,
+            access_pattern=AccessPattern.SEQUENTIAL,
+        ))
+
+        # Many ticks later, trigger another miss without re-accessing evicted content
+        sim.process_access(AccessRequest(
+            tick=100, model_id=0, layer_idx=3,
+            pool_type=PoolType.WEIGHT,
+            access_pattern=AccessPattern.SEQUENTIAL,
+        ))
+
+        # Should have a was_fault=False signal for the stale eviction record
+        good_signals = [f for f in policy.feedback_calls if f[1] is False]
+        assert len(good_signals) >= 1, \
+            f"Expected good-eviction signal, got {policy.feedback_calls}"
+
+    def test_evicted_content_tracked(self):
+        """Evictions populate _evicted_content dict."""
+        from src.simulator.workload import AccessRequest
+        mem = MemoryState(weight_blocks=2, workspace_blocks=1)
+        policy = LRUPolicy()
+        sim = SimController(memory=mem, policy=policy)
+
+        for i in range(2):
+            sim.process_access(AccessRequest(
+                tick=i, model_id=0, layer_idx=i,
+                pool_type=PoolType.WEIGHT,
+                access_pattern=AccessPattern.SEQUENTIAL,
+            ))
+
+        # Trigger eviction
+        sim.process_access(AccessRequest(
+            tick=10, model_id=0, layer_idx=2,
+            pool_type=PoolType.WEIGHT,
+            access_pattern=AccessPattern.SEQUENTIAL,
+        ))
+
+        # _evicted_content should have one entry keyed by (model_id=0, layer_idx=0, pool=WEIGHT)
+        evict_key = (0, 0, int(PoolType.WEIGHT))
+        assert evict_key in sim._evicted_content

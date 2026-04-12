@@ -49,10 +49,21 @@ Drives the simulation loop. Key state:
 - `_model_priorities` -- maps model_id to priority level
 - `_active_inferences` -- maps model_id to active inference count
 - `_recent_faults / _recent_accesses` -- sliding window for fault rate
+- `_evicted_content` -- recently evicted `(model_id, layer_idx, pool_type) → (block_id, tick)` for online feedback
+- `_eviction_feedback_window` -- tick window (default 200) after which an unaccessed eviction is declared "good"
 
 `process_access(request)` handles one access. `run(requests)` processes a full sequence.
 
 `get_global_state()` produces a `GlobalState` snapshot for policy decisions, computing pool utilizations, loaded model count, and recent fault rate.
+
+#### Online Feedback for Adaptive Policies
+
+After each eviction, the evicted block's content key `(model_id, layer_idx, pool_type)` is recorded in `_evicted_content`. Two signals then drive policy feedback:
+
+- **Bad eviction**: the next time the simulator misses on that content key, it pops the record and calls `policy.update_feedback(evicted_block_id, was_fault=True)`.
+- **Good eviction**: records older than `_eviction_feedback_window` ticks are considered successful evictions and fire `policy.update_feedback(evicted_block_id, was_fault=False)`.
+
+Non-adaptive policies (LRU, LFU, ARC, SLM-Heuristic) have no-op `update_feedback` and ignore both signals. CACHEUS uses them to reweight its expert ensemble.
 
 ### GlobalState (`core.py`)
 

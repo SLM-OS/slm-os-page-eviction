@@ -83,6 +83,22 @@ Key features:
 - Feature importance extraction (gain-based)
 - Early stopping on validation AUC
 
+### Hyperparameter Grid Search
+
+```python
+from src.training.train_xgb import grid_search_xgb
+
+results = grid_search_xgb(train_data, val_data, param_grid={
+    "max_depth": [4, 5, 6, 7],
+    "learning_rate": [0.05, 0.1, 0.2],
+    "min_child_weight": [5, 10, 20],
+})
+# results is a list of {**params, "val_auc": float, "best_iteration": int}
+# sorted by val_auc descending
+```
+
+The default grid covers 36 configurations. Empirically, the task is well-separated (all configs achieve > 0.9996 AUC); the default depth=6 / lr=0.1 is within 0.002% of the best (depth=7 / lr=0.2) while producing a smaller Rust export.
+
 ## MLP Training (`train_mlp.py`)
 
 ```python
@@ -175,3 +191,31 @@ Exports trained models as Rust source code:
 ```bash
 python scripts/export_to_slmos.py --model-dir data/models/ --output-dir data/export/
 ```
+
+### `scripts/analyze_models.py`
+
+Analyzes trained models on the test set: feature importance, per-scenario eviction decision accuracy, and int8 quantization verification:
+
+```bash
+python scripts/analyze_models.py --data data/traces/eviction_events.parquet --model-dir data/models/
+```
+
+Prints gain-ranked feature table (with % of total gain), per-scenario test accuracy for each model, and a quantization PASS/FAIL against the 99% decision-agreement target.
+
+### `scripts/feature_reduction.py`
+
+Trains XGBoost on the top-10 features only (identified from gain ranking) and profiles per-candidate inference latency for XGBoost and MLP at different batch sizes:
+
+```bash
+python scripts/feature_reduction.py --data data/traces/eviction_events.parquet --model-dir data/models/
+```
+
+### `scripts/run_dagger.py`
+
+Runs DAgger fine-tuning on an existing MLP checkpoint and compares its test-set accuracy against the baseline:
+
+```bash
+python scripts/run_dagger.py --data data/traces/eviction_events.parquet --model-dir data/models/ --dagger-rounds 3
+```
+
+Saves the fine-tuned model to `data/models/mlp_model_dagger.pt`. Note: when the baseline MLP is already near-ceiling, DAgger may not improve accuracy — this is a valid finding, not a bug.

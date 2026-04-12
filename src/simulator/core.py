@@ -178,6 +178,10 @@ class SimController:
         self._recent_accesses: int = 0
         self._recent_faults: int = 0
         self._fault_window: int = 100  # Ticks for recent_fault_rate
+        # Track recently evicted content for CACHEUS feedback
+        self._evicted_content: dict[tuple[int, int, int], tuple[int, int]] = {}
+        # Key: (model_id, layer_idx, pool_type) -> (block_id, eviction_tick)
+        self._eviction_feedback_window: int = 200  # Ticks before declaring "good eviction"
 
     def get_global_state(
         self,
@@ -291,6 +295,10 @@ class SimController:
                 if not self._loaded_models[victim.model_id]:
                     del self._loaded_models[victim.model_id]
 
+            # Track evicted content for CACHEUS feedback
+            evict_key = (victim.model_id, victim.layer_idx, int(victim.pool_type))
+            self._evicted_content[evict_key] = (victim.block_id, self.tick)
+
             victim.reset()
             block = victim
             self.total_evictions += 1
@@ -321,8 +329,20 @@ class SimController:
                 is_hit=False,
             )
 
-        # Provide feedback to the policy
-        self.policy.update_feedback(block.block_id, was_fault=True)
+        # Check if this miss is a re-access of recently evicted content (bad eviction)
+        content_key = (request.model_id, request.layer_idx, int(request.pool_type))
+        if content_key in self._evicted_content:
+            evicted_block_id, evict_tick = self._evicted_content.pop(content_key)
+            self.policy.update_feedback(evicted_block_id, was_fault=True)
+
+        # Flush old eviction records: content not re-accessed within window = good eviction
+        stale_keys = [
+            k for k, (bid, t) in self._evicted_content.items()
+            if self.tick - t > self._eviction_feedback_window
+        ]
+        for k in stale_keys:
+            bid, _ = self._evicted_content.pop(k)
+            self.policy.update_feedback(bid, was_fault=False)
 
         return False
 
