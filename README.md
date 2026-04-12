@@ -59,7 +59,7 @@ See [docs/getting-started.md](docs/getting-started.md) for full setup and usage 
 | Phase 3 | XGBoost training, grid search, feature importance, evaluation | ✅ Complete — mean norm fault rate **0.215** (target <0.3) |
 | Phase 4 | MLP training, DAgger, quantization, evaluation | ✅ Complete — MLP 95.97% vs XGBoost 96.07% test accuracy; int8 99.6% agreement |
 | Phase 5 | CACHEUS adaptive expert selector | ✅ Tuned (lr=0.4, window=200); `ml_only` pool wins at 0.212 mean — adding classical experts dilutes the ensemble |
-| Phase 6 | Rust export pipeline (XGBoost if-else, MLP int8) | ✅ Export code + end-to-end verification (XGBoost byte-perfect, MLP int8 95% decision agreement); SLM-OS Rust integration pending |
+| Phase 6 | Rust export pipeline + reference crate | ✅ Export verified end-to-end (XGBoost byte-perfect, MLP int8 95% agreement); reference Rust crate at `slm_os_integration/` with LRU/LFU/SLM-Heuristic/CACHEUS + 11 parity tests; final SLM-OS handoff pending |
 | Phase 7 | Benchmark suite, comparative analysis, documentation | Benchmark + results documented; statistical tests + capstone writeup pending |
 
 117 unit tests cover the simulator, workload generator, all policies (including CACHEUS weight update, trajectory recording, and eviction feedback tracking), feature extraction, Belady oracle, training pipeline helpers, statistical analysis helpers, and end-to-end Rust export.
@@ -109,6 +109,7 @@ Each eviction candidate is described by **27 features** (or 26 without the optio
 | [docs/training.md](docs/training.md) | Training pipeline, dataset generation, DAgger |
 | [docs/export.md](docs/export.md) | Rust export pipeline and verification |
 | [docs/getting-started.md](docs/getting-started.md) | Setup, usage, and project layout |
+| [docs/rust_integration.md](docs/rust_integration.md) | Rust reference crate (trait, classical policies, CACHEUS, parity tests) |
 
 ## Dependencies
 
@@ -132,7 +133,8 @@ slm-os-page-sim/
 │   ├── features/      # 27-feature extraction and normalization
 │   ├── training/      # Dataset, XGBoost/MLP training, DAgger, evaluation
 │   └── export/        # Rust code generation and cross-validation
-├── tests/             # 117 unit tests (simulator, policies, CACHEUS, analysis, training, export)
+├── tests/             # 118 Python unit tests (simulator, policies, CACHEUS, analysis, training, export)
+├── slm_os_integration/ # Reference Rust crate: trait + LRU/LFU/SLM-Heuristic/CACHEUS + parity tests
 ├── scripts/           # CLI: generate_dataset, train_all, benchmark, analyze_*, tune_cacheus,
 │                      #      run_dagger, feature_reduction, plot_trajectories, export_to_slmos
 ├── configs/           # YAML: scenarios, xgb_params, mlp_params

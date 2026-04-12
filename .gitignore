@@ -9,4 +9,6 @@ data/traces/
 data/models/
 data/results/
 data/export/
+slm_os_integration/target/
+slm_os_integration/Cargo.lock
 *.parquet

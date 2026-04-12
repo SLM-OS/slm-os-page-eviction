@@ -1,0 +1,14 @@
+[package]
+name = "slm-os-eviction"
+version = "0.1.0"
+edition = "2021"
+description = "Reference Rust eviction policy implementations for SLM-OS"
+license = "MIT"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# When enabled, includes the generated XGBoost (~1.3 MB) and MLP (~5 KB) modules.
+# Disabled by default to keep `cargo test` fast; enable for full benchmarks.
+generated_models = []

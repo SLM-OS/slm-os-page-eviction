@@ -1032,12 +1032,13 @@ All heavy lifting (model inference, expert selection) stays in Rust. The FFI is 
   target). Surfaced and fixed two real export bugs (XGBoost feature-name
   parsing, MLP layer-1 input quantization formula).
 
-#### Milestone 6.2: Rust Policy Trait 🔗
-- ☐ Create `runtime/src/mm/eviction_policy.rs`
-- ☐ Define `EvictionPolicy` trait (Section 9.1)
-- ☐ Implement `LRUPolicy`, `LFUPolicy` in Rust as baselines
-- ☐ Implement `SLMHeuristicPolicy` (port from Phase 3 Rust code)
-- ☐ Unit tests: verify identical decisions to Python implementations
+#### Milestone 6.2: Rust Policy Trait ✅ (reference crate)
+- ✅ Reference crate at `slm_os_integration/` (cargo project, edition 2021)
+- ✅ Define `EvictionPolicy` trait — `select_victim` / `score` / `update_feedback` / `reset` / `name`
+- ✅ Implement `LruPolicy`, `LfuPolicy` in Rust as baselines
+- ✅ Implement `SlmHeuristicPolicy` with the same priority cascade as Python
+- ✅ Parity tests in `slm_os_integration/tests/parity.rs` — 11 tests covering the same edges as the Python policy tests; all passing
+- ☐ Drop into SLM-OS `runtime/src/mm/eviction_policy.rs` (handoff to OS repo)
 
 *Depends on: trained models from Phases 3-4*
 
@@ -1059,12 +1060,13 @@ All heavy lifting (model inference, expert selection) stays in Rust. The FFI is 
 
 *Depends on: Milestone 6.1, trained MLP model*
 
-#### Milestone 6.5: CACHEUS in Rust 🔗
-- ☐ Implement `CACHEUSPolicy` with 5 experts
-- ☐ Implement weight update with f32 arithmetic (acceptable for non-hot-path)
-- ☐ Implement circular feedback buffer
-- ☐ Wire into `ModelAllocator::alloc_block()` (Section 9.2)
-- ☐ Shell command: `eviction` — show policy stats, expert weights, recent decisions
+#### Milestone 6.5: CACHEUS in Rust ✅ (reference crate)
+- ✅ `CacheusSelector` in `slm_os_integration/src/cacheus.rs` — wraps any `Vec<Box<dyn EvictionPolicy>>` of experts
+- ✅ Multiplicative weight update with f32 arithmetic (matches the corrected Python impl: penalize agreeing experts on bad evictions, small reward for disagreement, reward agreeing experts on good evictions)
+- ✅ Circular feedback buffer (`VecDeque<EvictionRecord>` capped at `window_size`)
+- ✅ Parity tests cover initial uniform weights, weights-sum-to-one after updates, reset restores uniform, min weight prevents permanent silence
+- ☐ Wire into `ModelAllocator::alloc_block()` (handoff to SLM-OS repo)
+- ☐ Shell command: `eviction` — show policy stats, expert weights, recent decisions (handoff)
 
 *Depends on: Milestones 6.2-6.4*
 
