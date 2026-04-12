@@ -58,7 +58,7 @@ See [docs/getting-started.md](docs/getting-started.md) for full setup and usage 
 | Phase 2 | Feature extraction (27-dim), normalization, Belady labeling, dataset assembly | ✅ Complete |
 | Phase 3 | XGBoost training, grid search, feature importance, evaluation | ✅ Complete — mean norm fault rate **0.215** (target <0.3) |
 | Phase 4 | MLP training, DAgger, quantization, evaluation | ✅ Complete — MLP 95.97% vs XGBoost 96.07% test accuracy; int8 99.6% agreement |
-| Phase 5 | CACHEUS adaptive expert selector | Selector + feedback loop implemented; CACHEUS mean 0.465; online tuning pending |
+| Phase 5 | CACHEUS adaptive expert selector | ✅ Tuned (lr=0.4, window=200); `ml_only` pool wins at 0.212 mean — adding classical experts dilutes the ensemble |
 | Phase 6 | Rust export pipeline (XGBoost if-else, MLP int8) | ✅ Export code + end-to-end verification (XGBoost byte-perfect, MLP int8 95% decision agreement); SLM-OS Rust integration pending |
 | Phase 7 | Benchmark suite, comparative analysis, documentation | Benchmark + results documented; statistical tests + capstone writeup pending |
 

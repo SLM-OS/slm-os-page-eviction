@@ -291,3 +291,54 @@ class TestTrajectoryPlotting:
         ])
         traj = {"ticks": [10, 20, 30, 40], "weights": weights}
         assert adaptation_speed(traj, threshold=0.01) is None
+
+
+class TestCacheusTrajectorySerialization:
+    """Regression test: numpy int64 ticks must serialize to JSON.
+
+    The trajectory recording in CACHEUSSelector stores `(tick, weights)`
+    tuples where `tick` comes from GlobalState.tick — which is int but may
+    be wrapped in numpy types when set from numpy operations. The full
+    1h+ tune_cacheus run failed at the very last step because json.dump
+    can't serialize np.int64. This test exercises the serialization shape
+    used in tune_cacheus.main().
+    """
+
+    def test_int64_ticks_serialize(self, tmp_path):
+        import json
+        import numpy as np
+
+        # Mimic the structure tune_cacheus.main() builds before json.dump
+        trajectories = {
+            "scenario_a": {
+                "expert_names": ["XGBoost", "MLP"],
+                "ticks": [np.int64(10), np.int64(20), np.int64(30)],
+                "weights": np.array([[0.5, 0.5], [0.4, 0.6], [0.3, 0.7]]),
+                "phase_changes": [np.int64(20)],
+            }
+        }
+
+        # The serialization block from tune_cacheus
+        traj_serializable = {
+            name: {
+                "expert_names": list(traj.get("expert_names", [])),
+                "ticks": [int(t) for t in traj["ticks"]],
+                "weights": (
+                    traj["weights"].tolist()
+                    if hasattr(traj["weights"], "tolist") else list(traj["weights"])
+                ),
+                "phase_changes": [int(t) for t in traj.get("phase_changes", [])],
+            }
+            for name, traj in trajectories.items()
+        }
+
+        out = tmp_path / "trajectories.json"
+        with open(out, "w") as f:
+            json.dump(traj_serializable, f)
+
+        # Round-trip and verify
+        with open(out) as f:
+            loaded = json.load(f)
+        assert loaded["scenario_a"]["ticks"] == [10, 20, 30]
+        assert loaded["scenario_a"]["phase_changes"] == [20]
+        assert loaded["scenario_a"]["weights"][0] == [0.5, 0.5]

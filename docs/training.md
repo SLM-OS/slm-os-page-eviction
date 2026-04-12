@@ -247,6 +247,14 @@ Produces:
 - `failure_analysis.csv` — scenarios where each policy exceeds 0.5 norm rate
 - `policy_comparison_per_scenario.png`, `policy_overall_ranking.png`, `policy_heatmap.png`
 
+### `scripts/record_cacheus_trajectories.py`
+
+Re-records the CACHEUS weight trajectories using a known-good config — useful when only the trajectories need updating (the full `tune_cacheus.py` sweep takes ~1.5h):
+
+```bash
+python scripts/record_cacheus_trajectories.py --model-dir data/models/ --output-dir data/results/ --pool ml_only --lr 0.4 --window 200
+```
+
 ### `scripts/plot_trajectories.py`
 
 Renders CACHEUS weight trajectories from `cacheus_trajectories.json`:

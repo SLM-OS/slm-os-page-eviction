@@ -335,16 +335,17 @@ def main() -> None:
         print(f"  {scenario_name}: {n_decisions} decisions, "
               f"{n_phase} phase changes detected")
 
-    # Persist trajectories as JSON (small enough)
+    # Persist trajectories as JSON (small enough). Force Python types so
+    # numpy int64 / float32 don't slip through and break json.dump.
     traj_serializable = {
         name: {
-            "expert_names": traj.get("expert_names", []),
-            "ticks": list(traj["ticks"]),
+            "expert_names": list(traj.get("expert_names", [])),
+            "ticks": [int(t) for t in traj["ticks"]],
             "weights": (
                 traj["weights"].tolist()
                 if hasattr(traj["weights"], "tolist") else list(traj["weights"])
             ),
-            "phase_changes": list(traj.get("phase_changes", [])),
+            "phase_changes": [int(t) for t in traj.get("phase_changes", [])],
         }
         for name, traj in trajectories.items()
     }
