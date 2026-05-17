@@ -229,3 +229,210 @@ class TestRustVerifyHelpers:
         out = "0.5\n0.25\n\n0.75\n"
         result = _parse_lines(out)
         assert list(result) == pytest.approx([0.5, 0.25, 0.75])
+
+
+# ---------------------------------------------------------------------------
+# Pure-Python SEMB+XGB1 parser + walker. Mirrors SLM-OS's Rust
+# `runtime/src/ml/xgb_tree.rs::predict_sigmoid` bit-for-bit; if either
+# parser drifts the round-trip test in `TestXGBoostSmbExport` fails.
+# ---------------------------------------------------------------------------
+
+def _parse_smb_eviction_blob(blob: bytes) -> dict:
+    """Return `{"trees": [[(feat, flags, left, right, thr, val), ...], ...],
+    "roots": [int, ...]}` ready for `_walk_xgb1_sigmoid`."""
+    import struct
+
+    # SEMB outer (24 bytes).
+    assert blob[0:4] == b"SEMB", "bad SEMB magic"
+    (ver, kind, schema, _reserved_u16, payload_len) = struct.unpack(
+        "<HHHHI", blob[4:16]
+    )
+    assert ver == 1 and kind == 1 and schema == 1, (ver, kind, schema)
+    (checksum, _trailing) = struct.unpack("<II", blob[16:24])
+    payload = blob[24:24 + payload_len]
+    assert len(payload) == payload_len, "truncated payload"
+
+    # Recompute FNV-1a and compare.
+    h = 0x811C9DC5
+    for b in payload:
+        h ^= b
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    assert h == checksum, f"checksum mismatch {h:x} != {checksum:x}"
+
+    # XGB1 header (16 bytes).
+    assert payload[0:4] == b"XGB1", "bad XGB1 magic"
+    (pv, _ru16, n_trees, n_nodes, _ru32) = struct.unpack(
+        "<HHHHI", payload[4:16]
+    )
+    assert pv == 1
+
+    cursor = 16
+    roots = list(struct.unpack(f"<{n_trees}H",
+                               payload[cursor:cursor + 2 * n_trees]))
+    cursor += 2 * n_trees
+
+    nodes = []
+    for _ in range(n_nodes):
+        (feat, flags, left, right, thr, val) = struct.unpack(
+            "<HHHHff", payload[cursor:cursor + 16]
+        )
+        nodes.append((feat, flags, left, right, thr, val))
+        cursor += 16
+
+    assert cursor == len(payload), "trailing bytes in payload"
+    return {"roots": roots, "nodes": nodes}
+
+
+def _walk_xgb1_sigmoid(parsed: dict, features) -> float:
+    """Sum every tree's leaf contribution and sigmoid the total. Mirrors
+    `XgbModel::predict_sigmoid` in SLM-OS."""
+    import math
+
+    total = 0.0
+    nodes = parsed["nodes"]
+    for root in parsed["roots"]:
+        idx = root
+        for _ in range(256):  # MAX_TREE_DEPTH safety cap
+            feat, flags, left, right, thr, val = nodes[idx]
+            if flags & 1:  # FLAG_LEAF
+                total += val
+                break
+            f = features[feat]
+            idx = left if f < thr else right
+    return 1.0 / (1.0 + math.exp(-total))
+
+
+class TestXGBoostSmbExport:
+    """Regression tests for the XGB-to-SEMB blob exporter.
+
+    The blob path complements the baked if-else path (`xgb_to_rust.py`)
+    by letting researchers iterate on new eviction models without
+    rebuilding the kernel. SLM-OS #932 motivates the verification
+    surface; SLM-OS #920 motivates the base-margin fold.
+    """
+
+    def _train_tiny_model(self, n_features: int = 27, n_rounds: int = 5):
+        xgb = pytest.importorskip("xgboost")
+        import numpy as np
+
+        rng = np.random.default_rng(0)
+        n = 400
+        X = rng.uniform(0, 1, size=(n, n_features)).astype(np.float32)
+        # Mildly imbalanced binary target so XGBoost's auto-derived
+        # base_score is non-trivial (logit != 0).
+        y = (X[:, 0] + X[:, 1] > 1.3).astype(np.int8)
+        dtrain = xgb.DMatrix(X, label=y)
+        params = {
+            "objective": "binary:logistic",
+            "max_depth": 3,
+            "eval_metric": "logloss",
+            "verbosity": 0,
+        }
+        return xgb.train(params, dtrain, num_boost_round=n_rounds)
+
+    def test_blob_has_semb_outer_header(self, tmp_path):
+        from src.export.xgb_to_smb import (
+            export_xgb_to_smb,
+            SEMB_HEADER_LEN,
+        )
+
+        booster = self._train_tiny_model()
+        blob = export_xgb_to_smb(booster, tmp_path / "evict.smb")
+        assert blob[0:4] == b"SEMB"
+        # Version=1, kind=1 (XGBoost), schema=1 — must match
+        # `runtime/src/mm/eviction/blob.rs`.
+        import struct
+        ver, kind, schema = struct.unpack("<HHH", blob[4:10])
+        assert (ver, kind, schema) == (1, 1, 1)
+        assert len(blob) >= SEMB_HEADER_LEN
+
+    def test_blob_xgb1_payload_round_trips(self, tmp_path):
+        """Parse the blob with the test-side mirror parser; compare per-vector
+        sigmoid output against booster.predict() within float tolerance."""
+        import numpy as np
+
+        from src.export.xgb_to_smb import export_xgb_to_smb
+
+        booster = self._train_tiny_model()
+        blob = export_xgb_to_smb(booster, tmp_path / "evict.smb")
+        parsed = _parse_smb_eviction_blob(blob)
+
+        # Generate 50 random feature vectors and compare predictions.
+        rng = np.random.default_rng(42)
+        X = rng.uniform(0, 1, size=(50, 27)).astype(np.float32)
+        xgb = pytest.importorskip("xgboost")
+        expected = booster.predict(xgb.DMatrix(X))
+
+        # Per-vector check; max diff inside f32 sigmoid precision tolerance.
+        max_diff = 0.0
+        for i in range(50):
+            got = _walk_xgb1_sigmoid(parsed, X[i].tolist())
+            max_diff = max(max_diff, abs(got - float(expected[i])))
+        # f32 leaf storage + Python-side f64 walk should agree to ~1e-5.
+        assert max_diff < 1e-4, f"max abs diff {max_diff}"
+
+    def test_synthetic_base_margin_tree_is_prepended(self, tmp_path):
+        """Tree count must be `real_trees + 1`; the new first tree is a
+        single-leaf node whose value equals logit(base_score). Catches a
+        future maintainer removing or moving the base-score fold."""
+        import math
+
+        from src.export.xgb_to_smb import export_xgb_to_smb
+
+        booster = self._train_tiny_model(n_rounds=4)
+        blob = export_xgb_to_smb(booster, tmp_path / "evict.smb")
+        parsed = _parse_smb_eviction_blob(blob)
+
+        # Booster has 4 real trees → blob has 5 (4 + 1 synthetic).
+        assert len(parsed["roots"]) == 5
+        # Synthetic tree at root[0] is a single leaf with value =
+        # logit(base_score). Read base_score back from the model.
+        import json
+        cfg = json.loads(booster.save_config())
+        bs_raw = cfg["learner"]["learner_model_param"].get("base_score", "0.5")
+        if isinstance(bs_raw, str) and bs_raw.startswith("["):
+            base_score = float(bs_raw.strip("[]").split(",")[0])
+        else:
+            base_score = float(bs_raw)
+        expected_margin = math.log(base_score / (1.0 - base_score))
+
+        synth_root = parsed["roots"][0]
+        synth_node = parsed["nodes"][synth_root]
+        feat, flags, _l, _r, _thr, val = synth_node
+        assert flags & 1, "first tree's root should be a leaf"
+        assert abs(val - expected_margin) < 1e-5, (val, expected_margin)
+
+    def test_blob_rejects_oversized_feature_idx(self, tmp_path):
+        """A tree that splits on feature 99 should fail at export time, not
+        produce a runtime parser rejection (which is harder to debug)."""
+        from src.export.xgb_to_smb import _flatten_tree
+
+        node = {
+            "split": "f99",
+            "split_condition": 0.5,
+            "yes": 1, "no": 2,
+            "nodeid": 0,
+            "children": [
+                {"nodeid": 1, "leaf": 0.1},
+                {"nodeid": 2, "leaf": -0.1},
+            ],
+        }
+        with pytest.raises(ValueError, match="feature_idx 99"):
+            _flatten_tree(node, feature_index={})
+
+    def test_generate_evict_corpus_shapes(self, tmp_path):
+        """Corpus byte sizes must match `N × FEATURE × f32` and `N × f32` so
+        the on-device verb can mmap-style read them by file length."""
+        from src.export.xgb_to_smb import (
+            generate_evict_verification_corpus,
+            EVICTION_FEATURE_COUNT,
+        )
+
+        booster = self._train_tiny_model()
+        generate_evict_verification_corpus(
+            booster, tmp_path, n_tests=37,
+        )
+        vec = (tmp_path / "test_vectors_xgb_evict.bin").read_bytes()
+        exp = (tmp_path / "expected_evict.bin").read_bytes()
+        assert len(vec) == 37 * EVICTION_FEATURE_COUNT * 4
+        assert len(exp) == 37 * 4

@@ -22,6 +22,10 @@ import xgboost as xgb
 from src.export.mlp_to_rust import compute_model_size, export_mlp_to_rust
 from src.export.verify_export import generate_test_vectors, verify_predictions
 from src.export.xgb_to_rust import dump_trees_json, export_xgb_to_rust
+from src.export.xgb_to_smb import (
+    export_xgb_to_smb,
+    generate_evict_verification_corpus,
+)
 from src.features.extractor import FeatureConfig
 from src.training.train_mlp import load_model as load_mlp
 from src.training.train_xgb import load_model as load_xgb
@@ -40,6 +44,22 @@ def main() -> None:
     parser.add_argument(
         "--no-predicted-reuse", action="store_true",
         help="Models trained without predicted_reuse_dist",
+    )
+    parser.add_argument(
+        "--smb-output-dir",
+        help="If set, also emit `evict.smb` + verification corpus here. "
+             "Lets SLM-OS dynamically load this model via "
+             "`eviction blob load xgboost <path>` and run "
+             "`bench xgb-equiv-evict` against it without rebuilding the "
+             "kernel. The baked .rs path (above) stays in lockstep so "
+             "anything that re-runs this script keeps the two paths in "
+             "sync.",
+    )
+    parser.add_argument(
+        "--smb-corpus-size", type=int, default=1000,
+        help="Number of verification vectors written into "
+             "expected_evict.bin / test_vectors_xgb_evict.bin "
+             "(only used when --smb-output-dir is set; default 1000).",
     )
     args = parser.parse_args()
 
@@ -71,6 +91,28 @@ def main() -> None:
         dmatrix = xgb.DMatrix(test_vectors, feature_names=config.feature_names)
         py_preds = model.predict(dmatrix)
         print(f"  Python predictions: min={py_preds.min():.4f}, max={py_preds.max():.4f}")
+
+        # SEMB blob + verification corpus for the SLM-OS blob-load path.
+        # Same trained model, second deployment format — researchers
+        # can iterate by dropping a new .smb on the SD card and running
+        # `bench xgb-equiv-evict` to confirm bit-equivalence on hardware.
+        if args.smb_output_dir:
+            smb_dir = Path(args.smb_output_dir)
+            smb_dir.mkdir(parents=True, exist_ok=True)
+            smb_path = smb_dir / "evict.smb"
+            blob = export_xgb_to_smb(
+                model, smb_path, feature_names=config.feature_names,
+            )
+            print(f"  SEMB blob: {smb_path} ({len(blob)} bytes)")
+            generate_evict_verification_corpus(
+                model, smb_dir,
+                feature_names=config.feature_names,
+                n_tests=args.smb_corpus_size,
+            )
+            print(
+                f"  Verification corpus: {args.smb_corpus_size} vectors "
+                f"({smb_dir}/test_vectors_xgb_evict.bin + expected_evict.bin)"
+            )
 
     # Export MLP
     if args.mlp_model:
