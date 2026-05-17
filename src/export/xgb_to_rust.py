@@ -52,7 +52,13 @@ def export_xgb_to_rust(
         lines.append("use crate::mm::eviction_policy::BlockFeatures;")
         lines.append("")
     lines.append(f"/// XGBoost prediction: returns P(optimal eviction target)")
-    lines.append(f"pub fn {function_name}(features: &[f32; {len(feature_names)}]) -> f32 {{")
+    # Use BlockFeatures (= [f32; 27]) in the signature when the import is
+    # emitted so the runtime crate's `-D warnings` doesn't reject the
+    # generated file with `unused_imports` (SLM-OS #957). Standalone mode
+    # keeps the inline array form so harnesses that don't pull in the
+    # SLM-OS type alias still compile.
+    sig_features = "&BlockFeatures" if not standalone else f"&[f32; {len(feature_names)}]"
+    lines.append(f"pub fn {function_name}(features: {sig_features}) -> f32 {{")
     lines.append("    let mut sum = 0.0_f32;")
     lines.append("")
 
