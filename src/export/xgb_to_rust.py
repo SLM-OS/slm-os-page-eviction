@@ -51,6 +51,28 @@ def export_xgb_to_rust(
     if not standalone:
         lines.append("use crate::mm::eviction_policy::BlockFeatures;")
         lines.append("")
+        # Emit the feature schema as a const array so the SLM-OS runtime can
+        # compile-time-verify it matches its own `FEATURE_NAMES`. This catches
+        # the silent feature-ordering drift hazard called out in SLM-OS #952
+        # Phase 2 — a renamed or re-ordered feature here would otherwise make
+        # every baked prediction garbage at runtime with no build error.
+        # Standalone mode (Rust verification harnesses) skips this — those
+        # consumers don't have the SLM-OS-side `FEATURE_NAMES` to compare to.
+        lines.append(f"/// Feature names in the order the trainer expects.")
+        lines.append(
+            "/// SLM-OS runtime const-asserts these match its own"
+        )
+        lines.append(
+            "/// `runtime/src/mm/eviction/features.rs::FEATURE_NAMES` — see"
+        )
+        lines.append("/// `docs/eviction-xgboost-graduation.md` §Feature schema invariants.")
+        lines.append(
+            f"pub const GENERATED_FEATURE_NAMES: [&str; {len(feature_names)}] = ["
+        )
+        for name in feature_names:
+            lines.append(f'    "{name}",')
+        lines.append("];")
+        lines.append("")
     lines.append(f"/// XGBoost prediction: returns P(optimal eviction target)")
     # Use BlockFeatures (= [f32; 27]) in the signature when the import is
     # emitted so the runtime crate's `-D warnings` doesn't reject the
