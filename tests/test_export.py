@@ -159,6 +159,56 @@ class TestXGBoostExport:
         assert "fn xgb_predict" in slm_src
         assert "fn xgb_predict" in standalone_src
 
+    def test_non_standalone_emits_feature_schema_guard(self, tmp_path):
+        """Non-standalone mode emits GENERATED_FEATURE_NAMES + uses
+        &BlockFeatures in the signature.
+
+        SLM-OS #952 Phase 2 relies on the const array being present so
+        its compile-time schema guard (const_assert in
+        runtime/src/mm/eviction/generated/mod.rs) can compare against
+        the runtime's own FEATURE_NAMES. SLM-OS #957 relies on the
+        signature using BlockFeatures so the matching `use` import
+        isn't flagged unused under `-D warnings`. Both are silently
+        regressable from this generator — pin them.
+
+        Standalone mode is checked too (it must NOT emit the const,
+        since standalone consumers don't have BlockFeatures in scope).
+        """
+        from src.export.xgb_to_rust import export_xgb_to_rust
+
+        names = ["frequency_rank", "predicted_reuse_dist", "eviction_cost"]
+        booster = self._train_tiny_model(names)
+
+        slm_src = export_xgb_to_rust(
+            booster, tmp_path / "slm.rs", feature_names=names, standalone=False,
+        )
+        standalone_src = export_xgb_to_rust(
+            booster, tmp_path / "standalone.rs", feature_names=names, standalone=True,
+        )
+
+        # SLM-OS-side guard contract: const emitted, names in order,
+        # length matches, signature uses the type alias.
+        assert (
+            f"pub const GENERATED_FEATURE_NAMES: [&str; {len(names)}] = ["
+            in slm_src
+        ), "GENERATED_FEATURE_NAMES const missing — SLM-OS #952 Phase 2 guard would fail"
+        for name in names:
+            assert f'"{name}",' in slm_src, f"feature name {name!r} not emitted in const"
+        assert "pub fn xgb_predict(features: &BlockFeatures)" in slm_src, (
+            "signature must use &BlockFeatures when import is present "
+            "— SLM-OS #957 unused-import regression"
+        )
+
+        # Standalone mode: no const, inline-array signature.
+        assert "GENERATED_FEATURE_NAMES" not in standalone_src, (
+            "standalone mode must not emit GENERATED_FEATURE_NAMES — "
+            "verification harnesses don't have BlockFeatures in scope"
+        )
+        assert (
+            f"pub fn xgb_predict(features: &[f32; {len(names)}])"
+            in standalone_src
+        ), "standalone signature must keep the inline array form"
+
 
 class TestMLPRustExport:
     """Tests for the MLP int8 Rust export.
