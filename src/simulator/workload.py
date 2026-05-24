@@ -292,14 +292,22 @@ class WorkloadGenerator:
 
     def gen_adversarial(
         self,
-        pool_size: int = 32,
+        pool_size: int = 64,
         num_accesses: int = 5000,
     ) -> list[AccessRequest]:
         """Scenario 7: Adversarial / pathological access patterns.
 
         Designed to stress-test policies with patterns that defeat simple
-        heuristics: cyclic scans slightly larger than the pool, random
-        jumps, and LRU-hostile sequences.
+        heuristics: a cyclic scan of `pool_size + 1` distinct blocks — one
+        larger than the cache — which is the textbook LRU-pessimal loop:
+        LRU always evicts exactly the block needed next, faulting on 100%
+        of accesses, while a reuse-distance-aware policy keeps the loop and
+        approaches Belady (~1/cycle fault rate).
+
+        `pool_size` MUST match the harness/evaluator weight-pool size
+        (64 blocks: `bench eviction-e2e` default `--weight 128` / 2 MB
+        blocks; `PolicyEvaluator(weight_blocks=64)`). If the cycle fits in
+        the pool the scenario degenerates to ~0% faults for every policy.
         """
         requests: list[AccessRequest] = []
         # Cyclic scan over pool_size + 1 blocks (defeats LRU)
@@ -319,6 +327,82 @@ class WorkloadGenerator:
 
         return requests
 
+    def gen_multimodel_skew(
+        self,
+        rounds: int = 40,
+        hot_blocks: int = 24,
+        reuse_reps: int = 2,
+        cold_per_round: int = 48,
+    ) -> list[AccessRequest]:
+        """Scenario 8: Multiple models served at skewed frequencies.
+
+        A small "hot" model (high-priority, frequently served) is reused
+        `reuse_reps` times every round, while a sequential scan of one-shot
+        "cold" blocks from low-traffic models follows each burst of reuse.
+        The hot set fits in roughly a third of the 64-block pool, but each
+        round's combined footprint overflows it, so the policy must choose
+        what to keep.
+
+        This is the canonical recency-vs-frequency split — the one place
+        the classical policies are *expected* to diverge:
+
+        - **LRU / SLM-Heuristic** evict the hot set because the cold scan
+          is more *recent*, then fault on the first reuse of every round.
+        - **LFU / ARC** keep the frequently-reused hot set (high count /
+          ARC's frequency list) and evict the cold one-shots instead.
+        - **ML (XGBoost / MLP)** predict short reuse distance for the hot
+          set and long for the RANDOM cold stream → same hot-set retention.
+
+        The cold one-shots fault under every policy (never reused), so the
+        frequency-aware policies converge toward that floor rather than
+        beating each other — the honest result is "recency-only loses,
+        frequency-aware wins," not "ML wins alone."
+
+        `reuse_reps >= 2` matters: on round 1 every block starts at
+        access_count 1, so the hot set must be re-touched *before* the cold
+        scan can evict it, otherwise its count never climbs above the cold
+        one-shots and LFU/ARC can't bootstrap protection (every policy then
+        degenerates to 100% faults). The hot model keeps a fixed
+        `(model_id, layer_idx)` identity across rounds so its count
+        accumulates; each cold access uses a fresh, never-repeated
+        `layer_idx` so it is genuinely one-shot.
+        """
+        requests: list[AccessRequest] = []
+        hot = MODELS["critical"]
+        cold_models = [MODELS["tiny"], MODELS["small"], MODELS["medium"]]
+
+        tick = 0
+        cold_layer = 0
+        for _ in range(rounds):
+            # Reuse the hot model's working set (frequency accumulates).
+            for _rep in range(reuse_reps):
+                for b in range(hot_blocks):
+                    requests.append(AccessRequest(
+                        tick=tick,
+                        model_id=hot.model_id,
+                        layer_idx=b,
+                        pool_type=PoolType.WEIGHT,
+                        access_pattern=AccessPattern.SEQUENTIAL,
+                        priority=hot.priority,
+                    ))
+                    tick += 1
+            # Sequential scan of one-shot cold blocks from low-traffic
+            # models (recent, but never reused).
+            for _ in range(cold_per_round):
+                cm = cold_models[cold_layer % len(cold_models)]
+                requests.append(AccessRequest(
+                    tick=tick,
+                    model_id=cm.model_id,
+                    layer_idx=cold_layer,
+                    pool_type=PoolType.WEIGHT,
+                    access_pattern=AccessPattern.RANDOM,
+                    priority=cm.priority,
+                ))
+                cold_layer += 1
+                tick += 1
+
+        return requests
+
     def generate_scenario(
         self,
         scenario_name: str,
@@ -333,6 +417,7 @@ class WorkloadGenerator:
             "mixed_priority": self.gen_mixed_priority,
             "gpu_contention": self.gen_gpu_contention,
             "adversarial": self.gen_adversarial,
+            "multimodel_skew": self.gen_multimodel_skew,
         }
         if scenario_name not in generators:
             raise ValueError(
@@ -352,4 +437,5 @@ class WorkloadGenerator:
             "mixed_priority",
             "gpu_contention",
             "adversarial",
+            "multimodel_skew",
         ]
