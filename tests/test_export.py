@@ -209,6 +209,57 @@ class TestXGBoostExport:
             in standalone_src
         ), "standalone signature must keep the inline array form"
 
+    def test_prune_slices_export_to_k_trees(self, tmp_path):
+        """booster[0:K] exports exactly K trees — the mechanism behind
+        `export_to_slmos.py --xgb-trees K` (SLM-OS #961). In gradient
+        boosting the first K trees of an N-round model are a K-round
+        model, so the slice is exact, not a retrain."""
+        from src.export.xgb_to_rust import export_xgb_to_rust
+
+        names = ["frequency_rank", "predicted_reuse_dist", "time_since_access"]
+        booster = self._train_tiny_model(names)  # 5 boost rounds
+
+        full = export_xgb_to_rust(booster, tmp_path / "full.rs", feature_names=names)
+        pruned = export_xgb_to_rust(
+            booster[0:2], tmp_path / "k2.rs", feature_names=names
+        )
+
+        assert "// Trees: 5," in full
+        assert "// Trees: 2," in pruned
+        # One `sum += {` block is emitted per tree.
+        assert full.count("sum += {") == 5
+        assert pruned.count("sum += {") == 2
+
+    def test_prune_corpus_matches_sliced_model(self, tmp_path):
+        """The verification corpus generated from a sliced booster matches
+        that booster's own predictions — the lockstep guarantee that lets
+        `--xgb-trees` keep the baked .rs and expected_evict.bin consistent
+        (a 200-tree corpus against a 16-tree baked model would falsely fail
+        `bench xgb-equiv-evict`)."""
+        xgb = pytest.importorskip("xgboost")
+        import numpy as np
+        from src.export.xgb_to_smb import (
+            EVICTION_FEATURE_COUNT,
+            generate_evict_verification_corpus,
+        )
+
+        names = [f"f{i}" for i in range(EVICTION_FEATURE_COUNT)]
+        sliced = self._train_tiny_model(names)[0:2]
+
+        generate_evict_verification_corpus(
+            sliced, tmp_path, feature_names=names, n_tests=64, seed=123
+        )
+        vecs = np.fromfile(
+            tmp_path / "test_vectors_xgb_evict.bin", dtype=np.float32
+        ).reshape(-1, EVICTION_FEATURE_COUNT)
+        exp = np.fromfile(tmp_path / "expected_evict.bin", dtype=np.float32)
+        got = sliced.predict(
+            xgb.DMatrix(vecs, feature_names=names)
+        ).astype(np.float32)
+
+        assert exp.shape[0] == 64
+        np.testing.assert_array_equal(exp, got)
+
 
 class TestMLPRustExport:
     """Tests for the MLP int8 Rust export.
