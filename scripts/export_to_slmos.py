@@ -73,6 +73,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.xgb_trees < 0:
+        parser.error("--xgb-trees must be >= 0 (0 = full model)")
+
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 

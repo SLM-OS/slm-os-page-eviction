@@ -115,7 +115,9 @@ def main() -> None:
     print(f"Evaluating K values: {ks}")
 
     seeds = [42, 123, 456, 789, 1337][:args.seeds]
-    evaluator = PolicyEvaluator(weight_blocks=64, workspace_blocks=32)
+    # Pool sizes default to PolicyEvaluator's canonical 64/32; keeping the
+    # defaults here avoids drift from benchmark.py if those ever change.
+    evaluator = PolicyEvaluator()
     scenarios = WorkloadGenerator.all_scenario_names()
 
     policies = [XGBPolicyTopK(booster, k, feature_config) for k in ks]
@@ -193,19 +195,19 @@ def main() -> None:
     # Order columns by k ascending for readability
     pivot = pivot[sorted(pivot.columns)]
 
-    # Reference column: baseline (largest K) normalized fault rate
+    # Per-scenario delta vs the baseline (largest K). Compute it over the
+    # numeric-labeled pivot first, then build a display frame with uniform
+    # string labels ("K8", "Δ_K8") so the output isn't a mixed int/str frame.
     baseline_k = max(ks)
-    pivot["delta_vs_K{0}".format(baseline_k)] = 0.0  # placeholder, computed below
     delta = pivot.subtract(pivot[baseline_k], axis=0)
+    out = pivot.rename(columns=lambda k: f"K{k}")
     for k in ks:
-        if k == baseline_k:
-            continue
-        pivot[f"Δ_K{k}"] = delta[k]
-    pivot = pivot.drop(columns=[f"delta_vs_K{baseline_k}"])
+        if k != baseline_k:
+            out[f"Δ_K{k}"] = delta[k]
 
-    pivot.to_csv(output_dir / "kprune_pivot.csv")
+    out.to_csv(output_dir / "kprune_pivot.csv")
     print("\n=== Mean normalized fault rate (lower = better; LRU=1.0, Belady=0.0) ===")
-    print(pivot.to_string())
+    print(out.to_string())
 
     # Aggregate across all scenarios+seeds
     overall = xgb_only.groupby("k").agg(
