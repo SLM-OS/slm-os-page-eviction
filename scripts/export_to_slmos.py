@@ -61,6 +61,16 @@ def main() -> None:
              "expected_evict.bin / test_vectors_xgb_evict.bin "
              "(only used when --smb-output-dir is set; default 1000).",
     )
+    parser.add_argument(
+        "--xgb-trees", type=int, default=0,
+        help="If > 0, prune the XGBoost ensemble to its first K trees "
+             "before export (gradient boosting => the first K trees of an "
+             "N-round model are identical to a K-round model). Both the "
+             "generated .rs AND the verification corpus use the pruned "
+             "model, keeping the baked predictor and its expected_evict.bin "
+             "in lockstep. SLM-OS #961 ships K=16 (200 -> 16 trees, "
+             "~300 ns/predict on pi-5-2, hit-rate preserved). 0 = full model.",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -73,6 +83,16 @@ def main() -> None:
     if args.xgb_model:
         print("--- XGBoost Export ---")
         model = load_xgb(args.xgb_model)
+
+        if args.xgb_trees > 0:
+            total = len(model.get_dump())
+            if args.xgb_trees < total:
+                model = model[0:args.xgb_trees]
+                print(f"  Pruned ensemble: {total} -> {args.xgb_trees} trees "
+                      f"(#961). Both .rs and corpus use the pruned model.")
+            else:
+                print(f"  --xgb-trees {args.xgb_trees} >= {total}; "
+                      f"using full model.")
 
         rust_path = output_dir / "xgb_policy_generated.rs"
         source = export_xgb_to_rust(
